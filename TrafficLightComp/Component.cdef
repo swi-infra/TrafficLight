@@ -1,0 +1,20 @@
+sources:
+{
+    trafficLight.c
+}
+
+ldflags:
+{
+    -lcurl
+}
+
+requires:
+{
+    api:
+    {
+        le_cfg.api
+        le_gpioRed = le_gpio.api
+        le_gpioYellow = le_gpio.api
+        le_gpioGreen = le_gpio.api
+    }
+}
