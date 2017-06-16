@@ -14,15 +14,16 @@ static char Url[ARRAY_SIZE] = "";
 // Polling timer interval in seconds
 static int PollingIntervalSec = 3;
 
-// memory pool reference
-static le_mem_PoolRef_t poolRef;
+// Memory pool and timer reference
+static le_mem_PoolRef_t PoolRef;
+static le_timer_Ref_t PollingTimer = NULL;
 
 // Header declaration
 static void GpioInit(void);
 static void ConfigTreeInit(void);
 static void ConfigTreeSet(void);
 static void Polling(le_timer_Ref_t timerRef);
-static void TimerHandle(le_timer_Ref_t PollingTimer);
+static void TimerHandle();
 static bool ConfigGetExitCodeFlag(void);
 static bool ConfigGetContentFlag(void);
 
@@ -273,9 +274,9 @@ static void GetUrl
         if( !le_mem_FindPool("htmlString") )
         {
             LE_DEBUG("Created local memory pool 'htmlString'");
-            poolRef = le_mem_CreatePool("htmlString", sizeof(MemoryPool_t));
+            PoolRef = le_mem_CreatePool("htmlString", sizeof(MemoryPool_t));
         }
-        myPool.actualData = le_mem_ForceAlloc(poolRef);
+        myPool.actualData = le_mem_ForceAlloc(PoolRef);
 
         res = curl_easy_setopt(curlPtr, CURLOPT_WRITEDATA, (void *) &myPool);
         if( res != CURLE_OK)
@@ -427,6 +428,14 @@ static void ConfigTreeSet
     return;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Fetches the boolean exitCodeCheck from the config tree /info/exitCode/checkFlag
+ *
+ * @return
+ *      exitCodeCheck - true/false
+ */
+//--------------------------------------------------------------------------------------------------
 static bool ConfigGetExitCodeFlag
 (
     void
@@ -442,6 +451,14 @@ static bool ConfigGetExitCodeFlag
     return exitCodeCheck;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Fetches the boolean contentCodeCheck from the config tree /info/content/checkFlag
+ *
+ * @return
+ *      contentCheck - true/false
+ */
+//--------------------------------------------------------------------------------------------------
 static bool ConfigGetContentFlag
 (
     void
@@ -498,7 +515,7 @@ static void GpioInit
 //--------------------------------------------------------------------------------------------------
 static void TimerHandle
 (
-    le_timer_Ref_t PollingTimer
+    void
 )
 {
     if(le_timer_IsRunning(PollingTimer))
@@ -535,7 +552,7 @@ static void Polling
     if(timerset != PollingIntervalSec)
     {
         PollingIntervalSec = timerset;
-        TimerHandle(timerRef);
+        TimerHandle();
     }
     LE_INFO("-------------------------- In polling function--------------------");
 
@@ -565,11 +582,12 @@ static void GpioDeinit
  *      Deactivated GPIO pins
  */
 //--------------------------------------------------------------------------------------------------
-static void SigChildEventHandler
+static void SigTermEventHandler
 (
     int sigNum
 )
 {
+    le_timer_Stop(PollingTimer);
     LE_INFO("Deactivating GPIO Pins");
     GpioDeinit();
 }
@@ -581,14 +599,13 @@ static void SigChildEventHandler
 //---------------------------------------------------
 COMPONENT_INIT
 {
-    le_timer_Ref_t PollingTimer;
-    le_sig_Block(SIGTERM);
-    le_sig_SetEventHandler(SIGTERM, SigChildEventHandler);
-
     curl_global_init(CURL_GLOBAL_ALL);
     GpioInit();
     ConfigTreeInit();
 
     PollingTimer = le_timer_Create("PollingTimer");
-    TimerHandle(PollingTimer);
+    TimerHandle();
+
+    le_sig_Block(SIGTERM);
+    le_sig_SetEventHandler(SIGTERM, SigTermEventHandler);
 }
