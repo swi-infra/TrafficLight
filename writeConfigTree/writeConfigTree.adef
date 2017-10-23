@@ -11,9 +11,13 @@ processes:
     }
 }
 
+start:auto
+
 bindings:
 {
     writeConfigTree.writeConfigTree.le_avdata -> avcService.le_avdata
+    writeConfigTree.writeConfigTree.le_avc -> avcService.le_avc
+    writeConfigTree.writeConfigTree.le_data -> dataConnectionService.le_data
 }
 
 requires:
