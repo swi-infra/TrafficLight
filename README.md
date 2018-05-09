@@ -1,11 +1,11 @@
 TrafficLight App
-==================
+================
 
 ### Description
 
 TrafficLight App is primarily used to monitor the last complete build of any Jenkins job results.
 It polls a settable URL at a settable interval that can be displayed on the device config tree or
-LE_INFO logs. The user can toggle exitCodeCheck and contentCodeCheck in the config tree to individually
+`LE_INFO` logs. The user can toggle `exitCodeCheck` and `contentCodeCheck` in the config tree to individually
 check the results of the HTTP Code, content result, or both (See States below).
 
 This was developed using:
@@ -24,20 +24,20 @@ This was developed using:
 ### States
 
 exitCodeCheck | contentCodeCheck | HTTP Code | Light Output
-:-------------|------------------|-----------|:-------------
- true         | true             | 200       | contentState
- true         | true             | !200      | LIGHT_RED
- true         | false            | 200       | LIGHT_GREEN
- true         | false            | !200      | LIGHT_RED
- false        | true             | N/A       | contentState
- false        | false            | N/A       | LIGHT_GREEN
+:-------------|------------------|-----------|:---------------
+ true         | true             | 200       | `contentState`
+ true         | true             | !200      | `LIGHT_RED`
+ true         | false            | 200       | `LIGHT_GREEN`
+ true         | false            | !200      | `LIGHT_RED`
+ false        | true             | N/A       | `contentState`
+ false        | false            | N/A       | `LIGHT_GREEN`
 
 #### contentState
 
-Light Output  | Status
-:-------------|:---------------------------
- LIGHT_GREEN  | SUCCESS
- LIGHT_YELLOW | ABORTED
- "            | UNSTABLE
- LIGHT_RED    | FAILURE
- "            | NULL (cannot find keyword)
+ Light Output   | Status
+:---------------|:---------------------------
+ `LIGHT_GREEN`  | `SUCCESS`
+ `LIGHT_YELLOW` | `ABORTED`
+ "              | `UNSTABLE`
+ `LIGHT_RED`    | `FAILURE`
+ "              | `NULL` (cannot find keyword)
