@@ -1,15 +1,15 @@
 executables:
 {
-    trafficLight = ( TrafficLightComp )
+    trafficLight = ( trafficLightComp )
 }
 
 bindings:
 {
-    trafficLight.TrafficLightComp.le_gpioRed -> gpioService.le_gpioPin21
-    trafficLight.TrafficLightComp.le_gpioYellow -> gpioService.le_gpioPin32
-    trafficLight.TrafficLightComp.le_gpioGreen -> gpioService.le_gpioPin7
+    trafficLight.trafficLightComp.le_gpioRed -> gpioService.le_gpioPin21
+    trafficLight.trafficLightComp.le_gpioYellow -> gpioService.le_gpioPin32
+    trafficLight.trafficLightComp.le_gpioGreen -> gpioService.le_gpioPin7
 
-    trafficLight.TrafficLightComp.le_pm -> powerMgr.le_pm
+    trafficLight.trafficLightComp.le_pm -> powerMgr.le_pm
 }
 
 processes:
@@ -47,12 +47,14 @@ requires:
         /bin/sh /bin/sh
         /bin/date /bin/date
     }
+
     device:
     {
         [rw] /dev/null /dev/null
         [r] /dev/urandom /dev/urandom
         [r] /dev/random /dev/random
     }
+
     configTree:
     {
         [rw] trafficLight
