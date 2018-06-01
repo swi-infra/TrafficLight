@@ -20,11 +20,8 @@ static le_timer_Ref_t PollingTimer = NULL;
 
 // Header declaration
 static void GpioInit(void);
-static void ConfigTreeInit(void);
-static void ConfigTreeSet(void);
 static void Polling(le_timer_Ref_t timerRef);
 static void TimerHandle();
-static bool ConfigGetBool(char *);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -135,7 +132,7 @@ static size_t WriteCallback
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the light states by finding the respective keyword in the buffer
+ * Check the state of a Jenkins job based on the content by the REST API <job>/<build>/api/xml
  *
  * @return
  *      light states
@@ -149,7 +146,6 @@ static MonitorState_t CheckJenkinsResult
 {
     char * contentResult;
     MonitorState_t status;
-    le_cfg_IteratorRef_t iteratorRef;
 
     if( strstr(actualData, "SUCCESS") )
     {
@@ -180,10 +176,6 @@ static MonitorState_t CheckJenkinsResult
 
     LE_INFO("contentResult = %s", contentResult);
 
-    iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-    le_cfg_SetString(iteratorRef, "contentResult", contentResult);
-    le_cfg_CommitTxn(iteratorRef);
-
     return status;
 }
 
@@ -209,7 +201,7 @@ static int GetIndexOfArrayValue
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the light states by finding the respective keyword in the buffer
+ * Check the Sensu state based on content as returned by the '/metrics' REST API.
  *
  * @return
  *      light states
@@ -223,7 +215,6 @@ static MonitorState_t CheckSensuResult
 {
     int index = 0;
     size_t length;
-    le_cfg_IteratorRef_t iteratorRef;
 
     length = strlen(actualData);
 
@@ -242,11 +233,6 @@ static MonitorState_t CheckSensuResult
             if( actualData[10] != '0')
             {
                 LE_ERROR("There are %c machines in critical state", actualData[10]);
-
-                iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-                le_cfg_SetString(iteratorRef, "contentResult", "CRITICAL");
-                le_cfg_CommitTxn(iteratorRef);
-
                 return STATE_FAIL;
             }
         }
@@ -257,11 +243,6 @@ static MonitorState_t CheckSensuResult
             if( actualData[9] != '0')
             {
                 LE_ERROR("There are %c machines in warning state", actualData[9]);
-
-                iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-                le_cfg_SetString(iteratorRef, "contentResult", "WARNING");
-                le_cfg_CommitTxn(iteratorRef);
-
                 return STATE_WARNING;
             }
         }
@@ -269,10 +250,6 @@ static MonitorState_t CheckSensuResult
         memmove(actualData, actualData + 1, length);
         length = strlen(actualData);
     }
-
-    iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-    le_cfg_SetString(iteratorRef, "contentResult", "SUCCESS");
-    le_cfg_CommitTxn(iteratorRef);
 
     return STATE_PASS;
 }
@@ -291,14 +268,9 @@ static MonitorState_t GetHTTPCode
 )
 {
     int httpCode;
-    le_cfg_IteratorRef_t iteratorRef;
     MonitorState_t status;
 
     curl_easy_getinfo(curlPtr, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    iteratorRef = le_cfg_CreateWriteTxn("/info/exitCode");
-    le_cfg_SetInt(iteratorRef, "exitCodeResult", httpCode);
-    le_cfg_CommitTxn(iteratorRef);
 
     LE_INFO("exitCodeExpected (httpCode): %i", httpCode);
 
@@ -330,7 +302,6 @@ static void GetUrl
 {
     CURL *curlPtr;                          ///<- Easy handle necessary for curl functions
     CURLcode res;                           ///<- Stores results of curl functions
-    le_cfg_IteratorRef_t iteratorRef;
 
     MemoryPool_t myPool;
 
@@ -338,9 +309,7 @@ static void GetUrl
     MonitorState_t contentState = STATE_PASS;
 
     // Get Url from config Tree
-    iteratorRef = le_cfg_CreateReadTxn("/");
-    le_cfg_GetString(iteratorRef, "url", Url, sizeof(Url), Url);
-    le_cfg_CancelTxn(iteratorRef);
+    le_cfg_QuickGetString("/url", Url, sizeof(Url), Url);
 
     LE_INFO("Url: %s", Url);
 
@@ -388,12 +357,12 @@ static void GetUrl
         else
         {
             // States are described in README.md
-            if(ConfigGetBool("/info/exitCode/checkFlag"))
+            if(le_cfg_QuickGetBool("/info/exitCode/checkFlag", false))
             {
                 exitCodeState = GetHTTPCode(curlPtr);
             }
 
-            if(ConfigGetBool("/info/content/checkFlag"))
+            if(le_cfg_QuickGetBool("/info/content/checkFlag", false))
             {
                 if( myPool.actualData[strlen(myPool.actualData)] != '\0')
                 {
@@ -402,10 +371,19 @@ static void GetUrl
                 }
                 else
                 {
-                    if(ConfigGetBool("/checkSensu")){
+                    char checkMode[256] = {0};
+
+                    le_cfg_QuickGetString("/info/content/checkMode",
+                                          checkMode,
+                                          sizeof(checkMode),
+                                          "");
+
+                    if(strncmp(checkMode, "sensu", sizeof(checkMode)) == 0)
+                    {
                         contentState = CheckSensuResult(myPool.actualData);
                     }
-                    else if(ConfigGetBool("/checkJenkins")){
+                    else if(strncmp(checkMode, "jenkins", sizeof(checkMode)) == 0)
+                    {
                         contentState = CheckJenkinsResult(myPool.actualData);
                     }
                     else{
@@ -413,9 +391,8 @@ static void GetUrl
                     }
                 }
             }
-            SetLightState( MIN(exitCodeState,contentState) );
 
-            ConfigTreeSet();
+            SetLightState( MIN(exitCodeState, contentState) );
         }
 
         curl_easy_cleanup(curlPtr);
@@ -428,130 +405,6 @@ static void GetUrl
     curl_global_cleanup();
 }
 
-//--------------------------------------------------------------------------------------------------
-/**
- * Initializes the config tree to default values when the app is first ran
- *
- * @return
- *      config get trafficLight:/
- */
-//--------------------------------------------------------------------------------------------------
-static void ConfigTreeInit
-(
-    void
-)
-{
-    le_cfg_IteratorRef_t iteratorRef;
-
-    // Set default Url to the global variable Url
-    iteratorRef = le_cfg_CreateWriteTxn("/");
-    le_cfg_SetString(iteratorRef, "url", Url);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/info/exitCode/checkFlag
-    Description: Settable flag to check the httpCode
-    Default: true
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/info/exitCode");
-    le_cfg_SetBool(iteratorRef, "checkFlag", true);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/info/exitCode/exitCodeResult
-    Description: Writes the result of the httpCode. Error if httpCode != 200
-    Default: 0
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/info/exitCode");
-    le_cfg_SetInt(iteratorRef, "exitCodeResult", 0);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/info/content/CheckFlag
-    Description: Settable flag to check the result of job status
-    Default: true
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-    le_cfg_SetBool(iteratorRef, "checkFlag", true);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/info/content/contentResult
-    Description: Writes the result of job status. Outputs: SUCCESS, FAILURE, ABORTED, NULL, or UNSTABLE
-    Default:
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-    le_cfg_SetString(iteratorRef, "contentResult", "");
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/pollingIntervalSec
-    Description: Polling timer intervals in second
-    Default: 3 seconds
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/");
-    le_cfg_SetInt(iteratorRef, "pollingIntervalSec", PollingIntervalSec);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/checkSensu
-    Description: Boolean to determine whether to check sensu
-    Default: true
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/");
-    le_cfg_SetBool(iteratorRef, "checkSensu", true);
-    le_cfg_CommitTxn(iteratorRef);
-
-    /* config get trafficLight:/checkJenkins
-    Description: Boolean to determine whether to check jenkins job
-    Default: false
-    */
-    iteratorRef = le_cfg_CreateWriteTxn("/");
-    le_cfg_SetBool(iteratorRef, "checkJenkins", false);
-    le_cfg_CommitTxn(iteratorRef);
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Reset the results of http code or status in the config tree to null when the user turns
- * off exitCodeCheck flag or contentCheck flag
- */
-//--------------------------------------------------------------------------------------------------
-static void ConfigTreeSet
-(
-    void
-)
-{
-    le_cfg_IteratorRef_t iteratorRef;
-
-    if(!ConfigGetBool("/info/exitCode/checkFlag"))
-    {
-        iteratorRef = le_cfg_CreateWriteTxn("/info/exitCode");
-        le_cfg_SetInt(iteratorRef, "exitCodeResult", 0);
-        le_cfg_CommitTxn(iteratorRef);
-    }
-    if(!ConfigGetBool("/info/content/checkFlag"))
-    {
-        iteratorRef = le_cfg_CreateWriteTxn("/info/content");
-        le_cfg_SetString(iteratorRef, "contentResult", "");
-        le_cfg_CommitTxn(iteratorRef);
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Fetches a boolean value from the config tree given the path
- *
- */
-//--------------------------------------------------------------------------------------------------
-static bool ConfigGetBool
-(
-    char * pathToTree
-)
-{
-    le_cfg_IteratorRef_t iteratorRef;
-    bool boolVal;
-
-    iteratorRef = le_cfg_CreateReadTxn(pathToTree);
-    boolVal = le_cfg_GetBool(iteratorRef, "", false);
-    le_cfg_CancelTxn(iteratorRef);
-
-    return boolVal;
-}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -621,18 +474,16 @@ static void Polling
     le_timer_Ref_t timerRef      ///< [IN] timer reference for changing intervals, starting and stopping
 )
 {
-    int timerset;
-    le_cfg_IteratorRef_t iteratorRef;
+    int timerSet;
 
-    iteratorRef = le_cfg_CreateReadTxn("/");
-    timerset = le_cfg_GetInt(iteratorRef, "pollingIntervalSec", PollingIntervalSec);
-    le_cfg_CancelTxn(iteratorRef);
+    timerSet = le_cfg_QuickGetInt("/pollingIntervalSec", PollingIntervalSec);
 
-    if(timerset != PollingIntervalSec)
+    if(timerSet != PollingIntervalSec)
     {
-        PollingIntervalSec = timerset;
+        PollingIntervalSec = timerSet;
         TimerHandle();
     }
+
     LE_INFO("-------------------------- In polling function--------------------");
 
     GetUrl();
@@ -684,7 +535,6 @@ COMPONENT_INIT
 
     curl_global_init(CURL_GLOBAL_ALL);
     GpioInit();
-    ConfigTreeInit();
 
     PollingTimer = le_timer_Create("PollingTimer");
     TimerHandle();

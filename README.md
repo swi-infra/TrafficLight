@@ -1,6 +1,8 @@
 TrafficLight Legato App
 =======================
 
+![TrafficLight + mangOH Green + WP8548](doc/TrafficLight.jpg)
+
 ### Description
 
 TrafficLight App is primarily used to monitor the status of a last completed Jenkins build.
@@ -12,7 +14,7 @@ The user can toggle `exitCodeCheck` and `contentCodeCheck` in the config tree to
 check the results of the HTTP Code, content result, or both (See States below).
 
 This was developed using:
-* [Legato](https://legato.io) IoT Framework - 16.10.3
+* [Legato](https://legato.io) IoT Framework
 * [Sierra Wireless WP85xx](https://www.sierrawireless.com/products-and-solutions/embedded-solutions/products/wp8548/) - Release 14
 * [MangOH Green](http://mangoh.io/mangoh-green-resources) + [IoT expansion card (for GPIO)](http://mangoh.io/iot-card-resources)
 * [Tower Light 3 colors - 12VDC](https://www.adafruit.com/product/2993)
@@ -20,9 +22,17 @@ This was developed using:
 * 3x 1K Ohm resistor
 * 3x 100 Ohm resistor
 
+Min versions:
+* Legato 17.05.0
+* WP85xx Release 15
+
 ### Schematic Diagram
 
 ![TrafficLight Schematic](doc/TrafficLightSchematic.png)
+
+### How to deploy it?
+
+Read instructions on [DEPLOY.md](DEPLOY.md).
 
 ### States
 
@@ -36,6 +46,12 @@ This was developed using:
  `false`        | `false`            | `N/A`       | `LIGHT_GREEN`
 
 #### `contentState`
+
+2 modes are supported at the moment:
+- `jenkins`
+  To monitor the status of a Jenkins build.
+- `sensu`
+  To monitor the health of a system.
 
  Light Output   | Status
 :---------------|:---------------------------

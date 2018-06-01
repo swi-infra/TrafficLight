@@ -7,7 +7,14 @@
 /* settings*/
 
 // Name of the Config Tree you want to write to
-#define CONFIG_TREE_NAME "trafficLight:"
+#ifndef CONFIG_TREE_NAME
+#error "CONFIG_TREE_NAME undefined"
+#endif
+
+#define xstr(s) str(s)
+#define str(s) #s
+
+#define CONFIG_TREE_NAME_STR xstr(CONFIG_TREE_NAME)
 
 // Paths in the config tree you want to write to
 #define CONFIG_TREE_URL "/url"
@@ -74,7 +81,7 @@ static void WriteBoolToConfig
 {
     le_cfg_IteratorRef_t iteratorRef;
 
-    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME);
+    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME_STR ":");
     le_cfg_SetBool(iteratorRef, pathToDataPtr, dataToWrite);
     le_cfg_CommitTxn(iteratorRef);
 }
@@ -87,7 +94,7 @@ static void WriteStringToConfig
 {
     le_cfg_IteratorRef_t iteratorRef;
 
-    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME);
+    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME_STR ":");
     le_cfg_SetString(iteratorRef, pathToDataPtr, dataToWrite);
     le_cfg_CommitTxn(iteratorRef);
 }
@@ -100,7 +107,7 @@ static void WriteIntToConfig
 {
     le_cfg_IteratorRef_t iteratorRef;
 
-    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME);
+    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME_STR ":");
     le_cfg_SetInt(iteratorRef, pathToDataPtr, dataToWrite);
     le_cfg_CommitTxn(iteratorRef);
 }
@@ -113,7 +120,7 @@ static void WriteFloatToConfig
 {
     le_cfg_IteratorRef_t iteratorRef;
 
-    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME);
+    iteratorRef = le_cfg_CreateWriteTxn(CONFIG_TREE_NAME_STR ":");
     le_cfg_SetFloat(iteratorRef, pathToDataPtr, dataToWrite);
     le_cfg_CommitTxn(iteratorRef);
 }
@@ -152,7 +159,7 @@ static void ConfigSettingHandler
         }
     }
 
-    LE_INFO("------------- Server writes to: %s%s -------------", CONFIG_TREE_NAME, (char *) contextPtr);
+    LE_INFO("------------- Server writes to: %s%s -------------", CONFIG_TREE_NAME_STR ":", (char *) contextPtr);
     LE_INFO("path to data is : %s", pathToDataPtr);
 
     // Get the data with their respective data types

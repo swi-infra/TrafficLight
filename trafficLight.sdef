@@ -1,0 +1,17 @@
+#include "$LEGATO_ROOT/default.sdef"
+
+buildVars:
+{
+    CONFIG_TREE_NAME = trafficLight
+}
+
+cflags:
+{
+    -DCONFIG_TREE_NAME=$CONFIG_TREE_NAME
+}
+
+apps:
+{
+    trafficLight.adef
+    writeConfigTree/writeConfigTree.adef
+}

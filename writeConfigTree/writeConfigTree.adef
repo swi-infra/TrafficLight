@@ -11,7 +11,7 @@ processes:
     }
 }
 
-start:auto
+start: auto
 
 bindings:
 {

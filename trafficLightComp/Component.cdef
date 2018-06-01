@@ -18,4 +18,50 @@ requires:
         le_gpioGreen = le_gpio.api
         le_pm = le_pm.api
     }
+
+    component:
+    {
+        ${LEGATO_ROOT}/components/3rdParty/curl
+    }
+}
+
+bundles:
+{
+    file:
+    {
+        ${LEGATO_SYSROOT}/usr/bin/curl /usr/bin/
+
+        #if file_exists(${LEGATO_SYSROOT}/usr/lib/libgnutls.so.30)
+            ${LEGATO_SYSROOT}/usr/lib/libgnutls.so.30 /lib/
+        #elif file_exists(${LEGATO_SYSROOT}/usr/lib/libgnutls.so.28)
+            ${LEGATO_SYSROOT}/usr/lib/libgnutls.so.28 /lib/
+        #endif
+
+        #if file_exists(${LEGATO_SYSROOT}/usr/lib/libidn.so.11)
+            ${LEGATO_SYSROOT}/usr/lib/libidn.so.11 /lib/
+        #endif
+
+        #if file_exists(${LEGATO_SYSROOT}/usr/lib/libgmp.so.10)
+            ${LEGATO_SYSROOT}/usr/lib/libgmp.so.10 /lib/
+        #endif
+
+        #if file_exists(${LEGATO_SYSROOT}/usr/lib/libnettle.so.6)
+            ${LEGATO_SYSROOT}/usr/lib/libnettle.so.6 /lib/
+        #elif file_exists(${LEGATO_SYSROOT}/usr/lib/libnettle.so.4)
+            ${LEGATO_SYSROOT}/usr/lib/libnettle.so.4 /lib/
+        #endif
+
+        #if file_exists(${LEGATO_SYSROOT}/usr/lib/libhogweed.so.4)
+            ${LEGATO_SYSROOT}/usr/lib/libhogweed.so.4 /lib/
+        #elif file_exists(${LEGATO_SYSROOT}/usr/lib/libhogweed.so.2)
+            ${LEGATO_SYSROOT}/usr/lib/libhogweed.so.2 /ib/
+        #endif
+
+        // needed for networking:
+        ${LEGATO_SYSROOT}/lib/libnss_compat.so.2 /lib/
+        ${LEGATO_SYSROOT}/lib/libnss_files.so.2 /lib/
+        ${LEGATO_SYSROOT}/lib/libnss_dns.so.2 /lib/
+        ${LEGATO_SYSROOT}/lib/libresolv.so.2 /lib/
+    }
+
 }

@@ -1,0 +1,4 @@
+_build*
+*.update
+*.swp
+*.cwe
