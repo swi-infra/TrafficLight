@@ -23,7 +23,7 @@ This was developed using:
 * 3x 100 Ohm resistor
 
 Min versions:
-* Legato 17.05.0
+* Legato 18.05.0
 * WP85xx Release 15
 
 ### Schematic Diagram
