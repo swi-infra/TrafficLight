@@ -14,4 +14,5 @@ apps:
 {
     trafficLight.adef
     writeConfigTree/writeConfigTree.adef
+    $LEGATO_ROOT/apps/sample/avcControl/avcControl.adef
 }
