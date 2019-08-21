@@ -3,7 +3,8 @@ TrafficLight Legato App
 
 ![TrafficLight + mangOH Green + WP8548](doc/TrafficLight.jpg)
 
-### Description
+Description
+-----------
 
 TrafficLight App is primarily used to monitor the status of a last completed Jenkins build.
 It can also be used to monitor [sensu](http://sensu.io/) or any other REST API.
@@ -26,15 +27,18 @@ Min versions:
 * Legato 18.05.0
 * WP85xx Release 15
 
-### Schematic Diagram
+Schematic Diagram
+-----------------
 
 ![TrafficLight Schematic](doc/TrafficLightSchematic.png)
 
-### How to deploy it?
+How to deploy it?
+-----------------
 
 Read instructions on [DEPLOY.md](DEPLOY.md).
 
-### States
+States
+------
 
 `exitCodeCheck` | `contentCodeCheck` | HTTP Code   | Light Output
 :---------------|--------------------|-------------|:---------------
@@ -45,7 +49,8 @@ Read instructions on [DEPLOY.md](DEPLOY.md).
  `false`        | `true`             | `N/A`       | `contentState`
  `false`        | `false`            | `N/A`       | `LIGHT_GREEN`
 
-#### `contentState`
+`contentState`
+--------------
 
 2 modes are supported at the moment:
 - `jenkins`
