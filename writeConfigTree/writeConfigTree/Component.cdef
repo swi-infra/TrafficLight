@@ -4,7 +4,6 @@ requires:
     {
         airVantage/le_avdata.api
         airVantage/le_avc.api
-        le_data.api
         le_cfg.api
     }
 }

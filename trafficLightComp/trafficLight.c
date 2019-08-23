@@ -3,13 +3,8 @@
 #include "interfaces.h"
 #include <curl/curl.h>
 
-#define SSL_ERROR_HELP    "Make sure your system date is set correctly (e.g. `date -s '2016-7-7'`)"
-#define SSL_ERROR_HELP_2  "Check the minimum date for this SSL cert to work"
 #define MIN(a,b) (((a)<(b))?(a):(b))
-#define ARRAY_SIZE 512
-
-// Url that is settable through config tree
-static char Url[ARRAY_SIZE] = "";
+#define MAX_URL_BYTES 512
 
 // Polling timer interval in seconds
 static int PollingIntervalSec = 10;
@@ -38,7 +33,7 @@ MemoryPool_t;
 /**
  * Light statuses
  *
- * @note Enumerated type is used in SetLightState function
+ * @note Enumerated type is used in SetMonitorState function
  */
 //--------------------------------------------------------------------------------------------------
 typedef enum
@@ -46,6 +41,7 @@ typedef enum
     LIGHT_RED,
     LIGHT_YELLOW,
     LIGHT_GREEN,
+    LIGHT_ON,
     LIGHT_OFF,
 }
 LightState_t;
@@ -60,6 +56,7 @@ typedef enum
     STATE_FAIL,
     STATE_WARNING,
     STATE_PASS,
+    STATE_UNKNOWN,
 }
 MonitorState_t;
 
@@ -85,14 +82,24 @@ static void SetLightState
         case LIGHT_GREEN:
             gpioGreen = true;
             break;
+
         case LIGHT_YELLOW:
             gpioYellow = true;
             break;
+
         case LIGHT_RED:
             gpioRed = true;
             break;
+
+        case LIGHT_ON:
+            gpioGreen = true;
+            gpioYellow = true;
+            gpioRed = true;
+            break;
+
         case LIGHT_OFF:
             break;
+
         default:
             break;
     }
@@ -100,6 +107,43 @@ static void SetLightState
     le_gpioGreen_SetPushPullOutput(LE_GPIOGREEN_ACTIVE_HIGH, gpioGreen);
     le_gpioYellow_SetPushPullOutput(LE_GPIOYELLOW_ACTIVE_HIGH, gpioYellow);
     le_gpioRed_SetPushPullOutput(LE_GPIORED_ACTIVE_HIGH, gpioRed);
+}
+
+static void SetMonitorState
+(
+    MonitorState_t monitorState
+)
+{
+    LightState_t lightState;
+    const char * monitorStateStr = "";
+
+    switch(monitorState)
+    {
+        case STATE_FAIL:
+            monitorStateStr = "fail";
+            lightState = LIGHT_RED;
+            break;
+
+        case STATE_WARNING:
+            monitorStateStr = "warning";
+            lightState = LIGHT_YELLOW;
+            break;
+
+        case STATE_PASS:
+            monitorStateStr = "pass";
+            lightState = LIGHT_GREEN;
+            break;
+
+        case STATE_UNKNOWN:
+        default:
+            monitorStateStr = "unknown";
+            lightState = LIGHT_ON;
+            break;
+    }
+
+    LE_INFO("Monitor state: %s (%d)", monitorStateStr, monitorState);
+
+    SetLightState(lightState);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -123,7 +167,7 @@ static size_t WriteCallback
     size_t realsize = size * nbMember;
     MemoryPool_t * memoryPoolPtr = (MemoryPool_t *) userDataPtr;
 
-    LE_DEBUG("bufferPtr = %s. This should match myPool.actualData in the GetUrl function", (char *) bufferPtr);
+    LE_DEBUG("bufferPtr = %s. This should match myPool.actualData in the CheckUrl function", (char *) bufferPtr);
 
     memoryPoolPtr->actualData = (char*) bufferPtr;
 
@@ -141,7 +185,7 @@ static size_t WriteCallback
 //--------------------------------------------------------------------------------------------------
 static MonitorState_t CheckJenkinsResult
 (
-    char * actualData     ///< [IN] Data that was handled in GetUrl with WriteCallback
+    char * actualData     ///< [IN] Data that was handled in CheckUrl with WriteCallback
 )
 {
     char * contentResult;
@@ -160,7 +204,7 @@ static MonitorState_t CheckJenkinsResult
     else if( strstr(actualData, "ABORTED") )
     {
         contentResult = "ABORTED";
-        status = STATE_WARNING;
+        status = STATE_PASS;
     }
     else if( strstr(actualData, "UNSTABLE") )
     {
@@ -210,17 +254,19 @@ static int GetIndexOfArrayValue
 //--------------------------------------------------------------------------------------------------
 static MonitorState_t CheckSensuResult
 (
-    char * actualData     ///< [IN] Data that was handled in GetUrl with WriteCallback
+    char * actualData     ///< [IN] Data that was handled in CheckUrl with WriteCallback
 )
 {
     int index = 0;
     size_t length;
+    MonitorState_t state = STATE_PASS;
 
     length = strlen(actualData);
 
     while( index != -1 )
     {
-        index = MIN(GetIndexOfArrayValue(actualData, length, 'c'), GetIndexOfArrayValue(actualData, length, 'w'));
+        index = MIN(GetIndexOfArrayValue(actualData, length, 'c'),
+                    GetIndexOfArrayValue(actualData, length, 'w'));
 
         // Truncate string until the string starts where 'c' is
         memmove(actualData, actualData + index, length - index + 1);
@@ -232,8 +278,9 @@ static MonitorState_t CheckSensuResult
             // Looks to see if the key to the mapping of "critical" is 0. If not, then there is an error
             if( actualData[10] != '0')
             {
-                LE_ERROR("There are %c machines in critical state", actualData[10]);
-                return STATE_FAIL;
+                LE_INFO("There are %c machines in critical state", actualData[10]);
+                state = STATE_FAIL;
+                break;
             }
         }
         // Check if the keyword is actually warning and find if there is a failure on the key
@@ -242,8 +289,9 @@ static MonitorState_t CheckSensuResult
             // Looks to see if the key to the mapping of "warning" is 0. If not, then there is an error
             if( actualData[9] != '0')
             {
-                LE_ERROR("There are %c machines in warning state", actualData[9]);
-                return STATE_WARNING;
+                LE_INFO("There are %c machines in warning state", actualData[9]);
+                state = STATE_WARNING;
+                break;
             }
         }
 
@@ -251,7 +299,8 @@ static MonitorState_t CheckSensuResult
         length = strlen(actualData);
     }
 
-    return STATE_PASS;
+    LE_INFO("Sensu state: %d", state);
+    return state;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -295,11 +344,13 @@ static MonitorState_t GetHTTPCode
  * 3. Calls functions to display light depending on the boolean values of exitCodeCheck and contentCheck
  */
 //--------------------------------------------------------------------------------------------------
-static void GetUrl
+static void CheckUrl
 (
     void
 )
 {
+    char url[MAX_URL_BYTES] = "";
+
     CURL *curlPtr;                          ///<- Easy handle necessary for curl functions
     CURLcode res;                           ///<- Stores results of curl functions
 
@@ -309,15 +360,20 @@ static void GetUrl
     MonitorState_t contentState = STATE_PASS;
 
     // Get Url from config Tree
-    le_cfg_QuickGetString("/url", Url, sizeof(Url), Url);
+    le_cfg_QuickGetString("/url", url, sizeof(url), "");
 
-    LE_INFO("Url: %s", Url);
+    LE_INFO("Url: %s", url);
+    if (url[0] == '\0')
+    {
+        LE_WARN("URL not set, skipping");
+        return;
+    }
 
     // Curl Operations
     curlPtr = curl_easy_init();
     if (curlPtr)
     {
-        curl_easy_setopt(curlPtr, CURLOPT_URL, Url);
+        curl_easy_setopt(curlPtr, CURLOPT_URL, url);
 
         //Write data into actualData. The conditionals check for errors
         res = curl_easy_setopt(curlPtr, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -339,7 +395,7 @@ static void GetUrl
         {
             LE_ERROR("curlopt_writedata failed: %s", curl_easy_strerror(res));
 
-            SetLightState(STATE_WARNING);
+            SetMonitorState(STATE_WARNING);
         }
 
         res = curl_easy_perform(curlPtr);
@@ -348,11 +404,11 @@ static void GetUrl
             LE_ERROR("curl_easy_perform() failed: %s", curl_easy_strerror(res));
             if (res == CURLE_SSL_CACERT)
             {
-                LE_ERROR(SSL_ERROR_HELP);
-                LE_ERROR(SSL_ERROR_HELP_2);
+                LE_ERROR("Make sure your system date is set correctly (e.g. `date -s '2016-7-7'`)");
+                LE_ERROR("Check the minimum date for this SSL cert to work");
             }
 
-            SetLightState(STATE_WARNING);
+            SetMonitorState(STATE_WARNING);
         }
         else
         {
@@ -386,13 +442,14 @@ static void GetUrl
                     {
                         contentState = CheckJenkinsResult(myPool.actualData);
                     }
-                    else{
+                    else
+                    {
                         LE_ERROR("Not checking Sensu-client or jenkins job");
                     }
                 }
             }
 
-            SetLightState( MIN(exitCodeState, contentState) );
+            SetMonitorState( MIN(exitCodeState, contentState) );
         }
 
         curl_easy_cleanup(curlPtr);
@@ -428,11 +485,26 @@ static void GpioInit
     le_gpioGreen_Activate();
     le_gpioGreen_EnablePullUp();
 
-    SetLightState(LIGHT_OFF);
+    SetMonitorState(LIGHT_OFF);
 
     LE_DEBUG("RED read PP - High: %d", le_gpioRed_Read());
     LE_DEBUG("YELLOW read PP - High: %d", le_gpioYellow_Read());
     LE_DEBUG("GREEN read PP - High: %d", le_gpioGreen_Read());
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Deactivate any active pins that are set currently so that the GPIO pins are usable
+ */
+//--------------------------------------------------------------------------------------------------
+static void GpioDeinit
+(
+    void
+)
+{
+    le_gpioGreen_Deactivate();
+    le_gpioYellow_Deactivate();
+    le_gpioRed_Deactivate();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -486,22 +558,7 @@ static void Polling
 
     LE_INFO("-------------------------- In polling function--------------------");
 
-    GetUrl();
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Deactivate any active pins that are set currently so that the GPIO pins are usable
- */
-//--------------------------------------------------------------------------------------------------
-static void GpioDeinit
-(
-    void
-)
-{
-    le_gpioGreen_Deactivate();
-    le_gpioYellow_Deactivate();
-    le_gpioRed_Deactivate();
+    CheckUrl();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -522,6 +579,44 @@ static void SigTermEventHandler
     GpioDeinit();
 }
 
+// This is the callback function for handling the results of a channel list query
+static void ClientChannelQueryHandler
+(
+    le_result_t result,                       ///< [IN] Result of the query
+    const le_dcs_ChannelInfo_t *channelList,  ///< [IN] Channel list returned
+    size_t channelListSize,                   ///< [IN] Channel list's size
+    void *contextPtr                          ///< [IN] Associated user context pointer
+)
+{
+    uint16_t i;
+
+    LE_INFO("Received channel query result %d, channel list size %d", result, channelListSize);
+
+    if (channelListSize == 0)
+    {
+        return;
+    }
+
+    for (i = 0; i < channelListSize; i++)
+    {
+        LE_INFO("Available channel #%d: name %s from technology %d, state %s, reference %p",
+                i + 1,
+                channelList[i].name,
+                channelList[i].technology,
+                ( channelList[i].state == LE_DCS_STATE_UP ) ? "up" : "down" ,
+                channelList[i].ref);
+    }
+}
+
+// This is the function initiating a channel list query
+static void PrintDcsChannels
+(
+    void
+)
+{
+    le_dcs_GetChannels(ClientChannelQueryHandler, NULL);
+}
+
 //---------------------------------------------------
 /**
  * Initializes GPIO Pins, and ConfigTree
@@ -529,9 +624,12 @@ static void SigTermEventHandler
 //---------------------------------------------------
 COMPONENT_INIT
 {
+    // Create a wake-up source to make sure that we don't fall asleep
     const char * wakeUpTag = "trafficLightWakeUpTag";
     le_pm_WakeupSourceRef_t wakeUpRef = le_pm_NewWakeupSource(1, wakeUpTag);
     le_pm_StayAwake(wakeUpRef);
+
+    PrintDcsChannels();
 
     curl_global_init(CURL_GLOBAL_ALL);
     GpioInit();

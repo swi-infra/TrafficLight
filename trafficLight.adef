@@ -10,6 +10,8 @@ bindings:
     trafficLight.trafficLightComp.le_gpioGreen -> gpioService.le_gpioPin7
 
     trafficLight.trafficLightComp.le_pm -> powerMgr.le_pm
+
+    trafficLight.trafficLightComp.le_dcs -> dataConnectionService.le_dcs
 }
 
 processes:

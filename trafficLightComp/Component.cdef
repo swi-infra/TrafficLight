@@ -17,6 +17,7 @@ requires:
         le_gpioYellow = le_gpio.api
         le_gpioGreen = le_gpio.api
         le_pm = le_pm.api
+        le_dcs.api
     }
 
     component:

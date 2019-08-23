@@ -1,14 +1,16 @@
 #include "legato.h"
 #include "interfaces.h"
 
-#define ARRAY_SIZE 512
-#define AVC_POLLING_TIME_MINUTE 1
+// Default polling timer to 1 minute
+#ifndef AVC_POLLING_TIME_MINUTE
+#  define AVC_POLLING_TIME_MINUTE 1
+#endif
 
 /* settings*/
 
 // Name of the Config Tree you want to write to
 #ifndef CONFIG_TREE_NAME
-#error "CONFIG_TREE_NAME undefined"
+#  error "CONFIG_TREE_NAME undefined"
 #endif
 
 #define xstr(s) str(s)
@@ -27,12 +29,12 @@
  * AVC related variable
  */
 //-------------------------------------------------------------------------------------------------
+
 // Reference to AVC event handler
-le_avdata_SessionStateHandlerRef_t  avcEventHandlerRef = NULL;
+static le_avdata_SessionStateHandlerRef_t AvcEventHandlerRef = NULL;
+
 // Reference to AVC Session handler
-le_avdata_RequestSessionObjRef_t sessionRef = NULL;
-// Reference to data connection
-le_data_RequestObjRef_t dataRequestRef = NULL;
+le_avdata_RequestSessionObjRef_t AvcSessionRef = NULL;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -75,8 +77,8 @@ const ConfigEntry_t ConfigEntries[] = {
 //-------------------------------------------------------------------------------------------------
 static void WriteBoolToConfig
 (
-    bool dataToWrite,
-    const char * pathToDataPtr
+    const char * pathToDataPtr,
+    bool dataToWrite
 )
 {
     le_cfg_IteratorRef_t iteratorRef;
@@ -88,8 +90,8 @@ static void WriteBoolToConfig
 
 static void WriteStringToConfig
 (
-    char * dataToWrite,
-    const char * pathToDataPtr
+    const char * pathToDataPtr,
+    char * dataToWrite
 )
 {
     le_cfg_IteratorRef_t iteratorRef;
@@ -101,8 +103,8 @@ static void WriteStringToConfig
 
 static void WriteIntToConfig
 (
-    int dataToWrite,
-    const char * pathToDataPtr
+    const char * pathToDataPtr,
+    int dataToWrite
 )
 {
     le_cfg_IteratorRef_t iteratorRef;
@@ -114,8 +116,8 @@ static void WriteIntToConfig
 
 static void WriteFloatToConfig
 (
-    double dataToWrite,
-    const char * pathToDataPtr
+    const char * pathToDataPtr,
+    double dataToWrite
 )
 {
     le_cfg_IteratorRef_t iteratorRef;
@@ -142,82 +144,90 @@ static void ConfigSettingHandler
     const char * pathToDataPtr = NULL;
     le_avdata_DataType_t dataType = LE_AVDATA_DATA_TYPE_NONE;
 
-    // Data to be stored with their respective data types
-    char bufferString[ARRAY_SIZE] = {0};
-    int32_t bufferInt = 0;
-    bool bufferBool = false;
-    double bufferFloat = 0;
-    int i = 0;
-
     // Find the pathToDataPtr and the dataType through the contextPtr sent by the handler.
-    for ( i = 0; i < NUM_ARRAY_MEMBERS(ConfigEntries); i++)
+    int i;
+    for (i = 0; i < NUM_ARRAY_MEMBERS(ConfigEntries); i++)
     {
-        if ( contextPtr == ConfigEntries[i].resourcePathPtr )
+        if (contextPtr == ConfigEntries[i].resourcePathPtr)
         {
             pathToDataPtr = ConfigEntries[i].configTreePathPtr;
             dataType = ConfigEntries[i].dataType;
+            break;
         }
+    }
+
+    if (pathToDataPtr == NULL)
+    {
+        LE_FATAL("Unable to find data for context %p", contextPtr);
     }
 
     LE_INFO("------------- Server writes to: %s%s -------------", CONFIG_TREE_NAME_STR ":", (char *) contextPtr);
     LE_INFO("path to data is : %s", pathToDataPtr);
 
     // Get the data with their respective data types
-    if ( dataType == LE_AVDATA_DATA_TYPE_STRING )
+    le_result_t resultGet = LE_FAULT;
+    switch(dataType)
     {
-        le_result_t resultGetString = le_avdata_GetString(pathToDataPtr, bufferString, ARRAY_SIZE);
-        if (LE_FAULT == resultGetString)
-        {
-            LE_ERROR("Error in getting latest %s", pathToDataPtr);
-        }
+        case LE_AVDATA_DATA_TYPE_STRING:
+            {
+                char bufferString[LE_CFG_STR_LEN_BYTES] = {0};
+                resultGet = le_avdata_GetString(pathToDataPtr, bufferString, sizeof(bufferString));
+                if (resultGet == LE_OK)
+                {
+                    LE_INFO("String being written is: '%s'", bufferString);
+                    WriteStringToConfig(pathToDataPtr, bufferString);
+                }
+            }
+            break;
 
-        LE_INFO("String being written is:'%s'", bufferString);
+        case LE_AVDATA_DATA_TYPE_INT:
+            {
+                int32_t bufferInt = 0;
+                resultGet = le_avdata_GetInt(pathToDataPtr, &bufferInt);
+                if (resultGet == LE_OK)
+                {
+                    LE_INFO("Int being written is: %i", bufferInt);
+                    WriteIntToConfig(pathToDataPtr, bufferInt);
+                }
+            }
+            break;
 
-        WriteStringToConfig(bufferString, pathToDataPtr);
+        case LE_AVDATA_DATA_TYPE_FLOAT:
+            {
+                double bufferFloat = 0;
+                resultGet = le_avdata_GetFloat(pathToDataPtr, &bufferFloat);
+                if (resultGet == LE_OK)
+                {
+                    LE_INFO("Float being written is: %f", bufferFloat);
+                    WriteFloatToConfig(pathToDataPtr, bufferFloat);
+                }
+            }
+            break;
+
+        case LE_AVDATA_DATA_TYPE_BOOL:
+            {
+                bool bufferBool = false;
+                resultGet = le_avdata_GetBool(pathToDataPtr, &bufferBool);
+                if (resultGet == LE_OK)
+                {
+                    LE_INFO("Bool being written is: %s", bufferBool ? "true" : "false");
+                    WriteBoolToConfig(pathToDataPtr, bufferBool);
+                }
+            }
+            break;
+
+        case LE_AVDATA_DATA_TYPE_NONE:
+            LE_ERROR("Error: dataType was not assigned (type none), pathToDataPtr may be corrupt");
+            break;
+
+        default:
+            LE_ERROR("Asset Data type not handled: %d", dataType);
+            break;
     }
-    else if ( dataType == LE_AVDATA_DATA_TYPE_INT )
+
+    if(resultGet != LE_OK)
     {
-        le_result_t resultGetInt = le_avdata_GetInt(pathToDataPtr, &bufferInt);
-        if (LE_FAULT == resultGetInt)
-        {
-            LE_ERROR("Error in getting latest %s", pathToDataPtr);
-        }
-
-        LE_INFO("Int being written is:%i", bufferInt);
-
-        WriteIntToConfig(bufferInt, pathToDataPtr);
-    }
-    else if ( dataType == LE_AVDATA_DATA_TYPE_FLOAT )
-    {
-        le_result_t resultGetFloat = le_avdata_GetFloat(pathToDataPtr, &bufferFloat);
-        if (LE_FAULT == resultGetFloat)
-        {
-            LE_ERROR("Error in getting latest %s", pathToDataPtr);
-        }
-
-        LE_INFO("Float being written is:%f", bufferFloat);
-
-        WriteFloatToConfig(bufferFloat, pathToDataPtr);
-    }
-    else if ( dataType == LE_AVDATA_DATA_TYPE_BOOL )
-    {
-        le_result_t resultGetBool = le_avdata_GetBool(pathToDataPtr, &bufferBool);
-        if (LE_FAULT == resultGetBool)
-        {
-            LE_ERROR("Error in getting latest %s", pathToDataPtr);
-        }
-
-        LE_INFO("Bool being written is:%s", bufferBool ? "true" : "false");
-
-        WriteBoolToConfig(bufferBool, pathToDataPtr);
-    }
-    else if ( dataType == LE_AVDATA_DATA_TYPE_NONE )
-    {
-        LE_ERROR("Error: dataType was not assigned (type none), pathToDataPtr may be corrupt");
-    }
-    else
-    {
-        LE_ERROR("Error, not a valid dataType or wrong contextPtr");
+        LE_ERROR("Unable to retreive asset data at '%s': %d", pathToDataPtr, resultGet);
     }
 }
 
@@ -232,44 +242,17 @@ static void AppTerminationHandler
 )
 {
     LE_INFO("Close AVC session");
-    le_avdata_ReleaseSession(sessionRef);
-    if (NULL != avcEventHandlerRef)
+
+    if (AvcSessionRef != NULL)
+    {
+        le_avdata_ReleaseSession(AvcSessionRef);
+    }
+
+    if (AvcEventHandlerRef != NULL)
     {
         // Unregister
         LE_INFO("Unregister the session handler");
-        le_avdata_RemoveSessionStateHandler(avcEventHandlerRef);
-    }
-
-    if (NULL != dataRequestRef)
-    {
-        LE_INFO("Releasing requested data connection");
-        le_data_Release(dataRequestRef);
-    }
-}
-
-// -------------------------------------------------------------------------------------------------
-/**
- *  Event callback for connection state changes.
- */
-// -------------------------------------------------------------------------------------------------
-static void ConnectionStateHandler
-(
-    const char *intfName,
-    bool   isConnected,
-    void*  contextPtr
-)
-{
-    LE_INFO("Connection State Event: '%s' %s",
-            intfName,
-            (isConnected) ? "connected" : "not connected");
-
-    if (!isConnected)
-    {
-        LE_ERROR("Data connection: not connected.");
-    }
-    else
-    {
-        LE_INFO("Data connection: connected.");
+        le_avdata_RemoveSessionStateHandler(AvcEventHandlerRef);
     }
 }
 
@@ -308,56 +291,52 @@ COMPONENT_INIT
     le_sig_Block(SIGTERM);
     le_sig_SetEventHandler(SIGTERM, AppTerminationHandler);
 
+#if AVC_POLLING_TIME_MINUTE != 0
+    // Set a polling timer as to make the target automatically connect to
+    // Airvantage every few minutes.
     le_result_t setPollingResult = le_avc_SetPollingTimer(AVC_POLLING_TIME_MINUTE);
     if (setPollingResult == LE_OUT_OF_RANGE)
     {
-        LE_ERROR("Polling timer is set out of range.");
+        LE_FATAL("Polling timer is set out of range (%d).", AVC_POLLING_TIME_MINUTE);
     }
-
-    // Register handler for connection state change
-    le_data_AddConnectionStateHandler(ConnectionStateHandler, NULL);
-
-    le_data_RequestObjRef_t dataRequestRef = le_data_Request();
-    if (NULL == dataRequestRef)
-    {
-        LE_ERROR("Data connection requested could not be processed");
-    }
+#else
+    LE_INFO("Polling timer not set");
+#endif
 
     // Start AVC Session
+
     // Register AVC handler
-    avcEventHandlerRef = le_avdata_AddSessionStateHandler(AvcStatusHandler, NULL);
+    AvcEventHandlerRef = le_avdata_AddSessionStateHandler(AvcStatusHandler, NULL);
+
     // Request AVC session. Note: AVC handler must be registered prior starting a session
-    le_avdata_RequestSessionObjRef_t sessionRequestRef = le_avdata_RequestSession();
-    if (NULL == sessionRequestRef)
+    AvcSessionRef = le_avdata_RequestSession();
+    if (NULL == AvcSessionRef)
     {
         LE_ERROR("AirVantage Connection Controller does not start.");
     }
     else
     {
-        sessionRef=sessionRequestRef;
         LE_INFO("AirVantage Connection Controller started.");
     }
 
     LE_INFO("Started LWM2M session with AirVantage");
 
     // Create resources
-    LE_INFO("Create instances AssetData ");
+    LE_INFO("Create instances AssetData");
 
     for (i = 0; i < NUM_ARRAY_MEMBERS(ConfigEntries); i++)
     {
-        resultCreateResources = le_avdata_CreateResource(ConfigEntries[i].configTreePathPtr, LE_AVDATA_ACCESS_SETTING);
+        LE_INFO("Registering resource '%s' ...", ConfigEntries[i].configTreePathPtr);
+
+        resultCreateResources = le_avdata_CreateResource(ConfigEntries[i].configTreePathPtr,
+                                                         LE_AVDATA_ACCESS_SETTING);
         if (LE_FAULT == resultCreateResources)
         {
             LE_ERROR("Error in creating %s", ConfigEntries[i].configTreePathPtr);
         }
+
+        le_avdata_AddResourceEventHandler(ConfigEntries[i].configTreePathPtr,
+                                          ConfigSettingHandler,
+                                          ConfigEntries[i].resourcePathPtr);
     }
-
-    // Register handler for Write Settings
-    LE_INFO("Register handler of paths");
-
-    for (i = 0; i < NUM_ARRAY_MEMBERS(ConfigEntries); i++)
-    {
-        le_avdata_AddResourceEventHandler(ConfigEntries[i].configTreePathPtr, ConfigSettingHandler, ConfigEntries[i].resourcePathPtr);
-    }
-
 }
